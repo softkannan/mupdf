@@ -1,7 +1,5 @@
 #include "mupdf/fitz.h"
 
-#include "fitz-imp.h"
-
 #include <assert.h>
 #include <math.h>
 #include <string.h>
@@ -156,7 +154,7 @@ static const char *fz_intent_names[] =
 int fz_lookup_rendering_intent(const char *name)
 {
 	int i;
-	for (i = 0; i < nelem(fz_intent_names); i++)
+	for (i = 0; i < (int)nelem(fz_intent_names); i++)
 		if (!strcmp(name, fz_intent_names[i]))
 			return i;
 	return FZ_RI_RELATIVE_COLORIMETRIC;
@@ -164,7 +162,7 @@ int fz_lookup_rendering_intent(const char *name)
 
 const char *fz_rendering_intent_name(int ri)
 {
-	if (ri >= 0 && ri < nelem(fz_intent_names))
+	if (ri >= 0 && ri < (int)nelem(fz_intent_names))
 		return fz_intent_names[ri];
 	return "RelativeColorimetric";
 }
@@ -327,7 +325,7 @@ fz_new_colorspace(fz_context *ctx, enum fz_colorspace_type type, int flags, int 
 		cs->type = type;
 		cs->flags = flags;
 		cs->n = n;
-		cs->name = fz_strdup(ctx, name ? name : "UNKNOWN");
+		cs->name = Memento_label(fz_strdup(ctx, name ? name : "UNKNOWN"), "cs_name");
 	}
 	fz_catch(ctx)
 	{
@@ -745,7 +743,7 @@ fz_cmp_link_key(fz_context *ctx, void *k0_, void *k1_)
 }
 
 static void
-fz_format_link_key(fz_context *ctx, char *s, int n, void *key_)
+fz_format_link_key(fz_context *ctx, char *s, size_t n, void *key_)
 {
 	static const char *hex = "0123456789abcdef";
 	fz_link_key *key = (fz_link_key *)key_;
@@ -819,7 +817,7 @@ fz_find_icc_link(fz_context *ctx,
 	link = fz_find_item(ctx, fz_drop_icc_link_imp, &key, &fz_link_store_type);
 	if (!link)
 	{
-		new_key = fz_malloc(ctx, sizeof (fz_link_key));
+		new_key = fz_malloc_struct(ctx, fz_link_key);
 		memcpy(new_key, &key, sizeof (fz_link_key));
 		fz_try(ctx)
 		{
@@ -1010,7 +1008,7 @@ static void fz_cached_color_convert(fz_context *ctx, fz_color_converter *cc_, co
 
 	cc->base.convert(ctx, &cc->base, ss, ds);
 
-	val = fz_malloc(ctx, n);
+	val = Memento_label(fz_malloc_array(ctx, cc->base.ds->n, float), "cached_color_convert");
 	memcpy(val, ds, n);
 	fz_try(ctx)
 		fz_hash_insert(ctx, cc->hash, ss, val);

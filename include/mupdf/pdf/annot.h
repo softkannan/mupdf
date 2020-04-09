@@ -114,7 +114,15 @@ pdf_obj *pdf_lookup_name(fz_context *ctx, pdf_document *doc, pdf_obj *which, pdf
 pdf_obj *pdf_load_name_tree(fz_context *ctx, pdf_document *doc, pdf_obj *which);
 pdf_obj *pdf_lookup_number(fz_context *ctx, pdf_obj *root, int needle);
 
+void pdf_walk_tree(fz_context *ctx, pdf_obj *obj, pdf_obj *kid_name,
+			void (*arrive)(fz_context *, pdf_obj *, void *, pdf_obj **),
+			void (*leave)(fz_context *, pdf_obj *, void *),
+			void *arg,
+			pdf_obj **names,
+			pdf_obj **values);
+
 int pdf_resolve_link(fz_context *ctx, pdf_document *doc, const char *uri, float *xp, float *yp);
+fz_location pdf_resolve_link_imp(fz_context *ctx, fz_document *doc_, const char *uri, float *xp, float *yp);
 fz_link *pdf_load_link_annots(fz_context *ctx, pdf_document *, pdf_obj *annots, int pagenum, fz_matrix page_ctm);
 
 fz_matrix pdf_annot_transform(fz_context *ctx, pdf_annot *annot);
@@ -144,6 +152,7 @@ float pdf_annot_opacity(fz_context *ctx, pdf_annot *annot);
 void pdf_annot_color(fz_context *ctx, pdf_annot *annot, int *n, float color[4]);
 void pdf_annot_interior_color(fz_context *ctx, pdf_annot *annot, int *n, float color[4]);
 int pdf_annot_quadding(fz_context *ctx, pdf_annot *annot);
+fz_text_language pdf_annot_language(fz_context *ctx, pdf_annot *annot);
 
 void pdf_annot_MK_BG(fz_context *ctx, pdf_annot *annot, int *n, float color[4]);
 void pdf_annot_MK_BC(fz_context *ctx, pdf_annot *annot, int *n, float color[4]);
@@ -151,7 +160,7 @@ int pdf_annot_MK_BG_rgb(fz_context *ctx, pdf_annot *annot, float rgb[3]);
 int pdf_annot_MK_BC_rgb(fz_context *ctx, pdf_annot *annot, float rgb[3]);
 
 int pdf_annot_quad_point_count(fz_context *ctx, pdf_annot *annot);
-void pdf_annot_quad_point(fz_context *ctx, pdf_annot *annot, int i, float qp[8]);
+fz_quad pdf_annot_quad_point(fz_context *ctx, pdf_annot *annot, int i);
 
 int pdf_annot_ink_list_count(fz_context *ctx, pdf_annot *annot);
 int pdf_annot_ink_list_stroke_count(fz_context *ctx, pdf_annot *annot, int i);
@@ -164,13 +173,16 @@ void pdf_set_annot_opacity(fz_context *ctx, pdf_annot *annot, float opacity);
 void pdf_set_annot_color(fz_context *ctx, pdf_annot *annot, int n, const float color[4]);
 void pdf_set_annot_interior_color(fz_context *ctx, pdf_annot *annot, int n, const float color[4]);
 void pdf_set_annot_quadding(fz_context *ctx, pdf_annot *annot, int q);
+void pdf_set_annot_language(fz_context *ctx, pdf_annot *annot, fz_text_language lang);
 
-void pdf_set_annot_quad_points(fz_context *ctx, pdf_annot *annot, int n, const float *v);
+void pdf_set_annot_quad_points(fz_context *ctx, pdf_annot *annot, int n, const fz_quad *qv);
 void pdf_clear_annot_quad_points(fz_context *ctx, pdf_annot *annot);
 void pdf_add_annot_quad_point(fz_context *ctx, pdf_annot *annot, fz_quad quad);
 
 void pdf_set_annot_ink_list(fz_context *ctx, pdf_annot *annot, int n, const int *count, const fz_point *v);
 void pdf_clear_annot_ink_list(fz_context *ctx, pdf_annot *annot);
+void pdf_add_annot_ink_list_stroke(fz_context *ctx, pdf_annot *annot);
+void pdf_add_annot_ink_list_stroke_vertex(fz_context *ctx, pdf_annot *annot, fz_point p);
 void pdf_add_annot_ink_list(fz_context *ctx, pdf_annot *annot, int n, fz_point stroke[]);
 
 void pdf_set_annot_icon_name(fz_context *ctx, pdf_annot *annot, const char *name);
@@ -203,8 +215,8 @@ void pdf_set_annot_contents(fz_context *ctx, pdf_annot *annot, const char *text)
 const char *pdf_annot_author(fz_context *ctx, pdf_annot *annot);
 void pdf_set_annot_author(fz_context *ctx, pdf_annot *annot, const char *author);
 
+void pdf_format_date(fz_context *ctx, char *s, int n, int64_t secs);
 int64_t pdf_annot_modification_date(fz_context *ctx, pdf_annot *annot);
-
 void pdf_set_annot_modification_date(fz_context *ctx, pdf_annot *annot, int64_t time);
 
 void pdf_parse_default_appearance(fz_context *ctx, const char *da, const char **font, float *size, float color[3]);
@@ -232,5 +244,13 @@ fz_pixmap *pdf_new_pixmap_from_annot(fz_context *ctx, pdf_annot *annot, fz_matri
 fz_stext_page *pdf_new_stext_page_from_annot(fz_context *ctx, pdf_annot *annot, const fz_stext_options *options);
 
 fz_layout_block *pdf_layout_text_widget(fz_context *ctx, pdf_annot *annot);
+
+const char *pdf_guess_mime_type_from_file_name(fz_context *ctx, const char *filename);
+pdf_obj *pdf_embedded_file_stream(fz_context *ctx, pdf_obj *fs);
+const char *pdf_embedded_file_name(fz_context *ctx, pdf_obj *fs);
+const char *pdf_embedded_file_type(fz_context *ctx, pdf_obj *fs);
+int pdf_is_embedded_file(fz_context *ctx, pdf_obj *fs);
+fz_buffer *pdf_load_embedded_file(fz_context *ctx, pdf_obj *fs);
+pdf_obj *pdf_add_embedded_file(fz_context *ctx, pdf_document *doc, const char *filename, const char *mimetype, fz_buffer *contents);
 
 #endif

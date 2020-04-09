@@ -91,6 +91,11 @@ static inline int fz_maxi(int a, int b)
 	return (a > b ? a : b);
 }
 
+static inline size_t fz_maxz(size_t a, size_t b)
+{
+	return (a > b ? a : b);
+}
+
 static inline int64_t fz_maxi64(int64_t a, int64_t b)
 {
 	return (a > b ? a : b);
@@ -351,11 +356,30 @@ struct fz_quad_s
 	fz_point ul, ur, ll, lr;
 };
 
+static inline fz_quad fz_make_quad(
+	float ul_x, float ul_y,
+	float ur_x, float ur_y,
+	float ll_x, float ll_y,
+	float lr_x, float lr_y)
+{
+	fz_quad q = {
+		{ ul_x, ul_y },
+		{ ur_x, ur_y },
+		{ ll_x, ll_y },
+		{ lr_x, lr_y },
+	};
+	return q;
+}
+
+fz_quad fz_quad_from_rect(fz_rect r);
 fz_rect fz_rect_from_quad(fz_quad q);
 fz_quad fz_transform_quad(fz_quad q, fz_matrix m);
 
 int fz_is_point_inside_quad(fz_point p, fz_quad q);
 int fz_is_point_inside_rect(fz_point p, fz_rect r);
 int fz_is_point_inside_irect(int x, int y, fz_irect r);
+
+int fz_is_quad_inside_quad(fz_quad needle, fz_quad haystack);
+int fz_is_quad_intersecting_quad(fz_quad a, fz_quad b);
 
 #endif

@@ -30,7 +30,7 @@ The formula shown above is a simplification of the following formula:
 
  Ar * Cr = [(1-As)*Ab*Cb] + [(1-Ab)*As*Cs] + [Ab*As*B(Cb, Cs)]
 
-At first glange this always appears to be a mistake to me, as it looks
+At first glance this always appears to be a mistake to me, as it looks
 like they have make a mistake in the division.
 
 However, if we consider the result alpha equation:
@@ -107,7 +107,7 @@ static const char *fz_blendmode_names[] =
 int fz_lookup_blendmode(const char *name)
 {
 	int i;
-	for (i = 0; i < nelem(fz_blendmode_names); i++)
+	for (i = 0; i < (int)nelem(fz_blendmode_names); i++)
 		if (!strcmp(name, fz_blendmode_names[i]))
 			return i;
 	return FZ_BLEND_NORMAL;
@@ -115,7 +115,7 @@ int fz_lookup_blendmode(const char *name)
 
 char *fz_blendmode_name(int blendmode)
 {
-	if (blendmode >= 0 && blendmode < nelem(fz_blendmode_names))
+	if (blendmode >= 0 && blendmode < (int)nelem(fz_blendmode_names))
 		return (char*)fz_blendmode_names[blendmode];
 	return "Normal";
 }
@@ -492,7 +492,7 @@ fz_blend_nonseparable(byte * FZ_RESTRICT bp, int bal, const byte * FZ_RESTRICT s
 
 				/* ugh, division to get non-premul components */
 				int invsa = sa ? 255 * 256 / sa : 0;
-				int invba = ba ? 255 * 256 / ba : 0;
+				int invba = 255 * 256 / ba;
 
 				int sr = (sp[0] * invsa) >> 8;
 				int sg = (sp[1] * invsa) >> 8;

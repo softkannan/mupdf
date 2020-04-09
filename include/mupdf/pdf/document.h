@@ -19,9 +19,9 @@ enum
 
 struct pdf_lexbuf_s
 {
-	int size;
-	int base_size;
-	int len;
+	size_t size;
+	size_t base_size;
+	size_t len;
 	int64_t i;
 	float f;
 	char *scratch;
@@ -70,6 +70,9 @@ fz_outline *pdf_load_outline(fz_context *ctx, pdf_document *doc);
 
 int pdf_count_layer_configs(fz_context *ctx, pdf_document *doc);
 
+void pdf_invalidate_xfa(fz_context *ctx, pdf_document *doc);
+
+
 typedef struct
 {
 	const char *name;
@@ -110,69 +113,17 @@ void pdf_set_layer_config_as_default(fz_context *ctx, pdf_document *doc);
 
 int pdf_has_unsaved_changes(fz_context *ctx, pdf_document *doc);
 
-enum pdf_signature_error
-{
-	PDF_SIGNATURE_ERROR_OKAY,
-	PDF_SIGNATURE_ERROR_NO_SIGNATURES,
-	PDF_SIGNATURE_ERROR_NO_CERTIFICATE,
-	PDF_SIGNATURE_ERROR_DIGEST_FAILURE,
-	PDF_SIGNATURE_ERROR_SELF_SIGNED,
-	PDF_SIGNATURE_ERROR_SELF_SIGNED_IN_CHAIN,
-	PDF_SIGNATURE_ERROR_NOT_TRUSTED,
-	PDF_SIGNATURE_ERROR_UNKNOWN
-};
-
-typedef struct pdf_pkcs7_designated_name_s
-{
-	char *cn;
-	char *o;
-	char *ou;
-	char *email;
-	char *c;
-}
-pdf_pkcs7_designated_name;
-
-/* Object that can perform the cryptographic operation necessary for document signing */
-typedef struct pdf_pkcs7_signer_s pdf_pkcs7_signer;
-
-/* Increment the reference count for a signer object */
-typedef pdf_pkcs7_signer *(pdf_pkcs7_keep_fn)(pdf_pkcs7_signer *signer);
-
-/* Drop a reference for a signer object */
-typedef void (pdf_pkcs7_drop_fn)(pdf_pkcs7_signer *signer);
-
-/* Obtain the designated name information from a signer object */
-typedef pdf_pkcs7_designated_name *(pdf_pkcs7_designated_name_fn)(pdf_pkcs7_signer *signer);
-
-/* Free the resources associated with previously obtained designated name information */
-typedef void (pdf_pkcs7_drop_designated_name_fn)(pdf_pkcs7_signer *signer, pdf_pkcs7_designated_name *name);
-
-/* Predict the size of the digest. The actual digest returned by create_digest will be no greater in size */
-typedef int (pdf_pkcs7_max_digest_size_fn)(pdf_pkcs7_signer *signer);
-
-/* Create a signature based on ranges of bytes drawn from a stream */
-typedef int (pdf_pkcs7_create_digest_fn)(pdf_pkcs7_signer *signer, fz_stream *in, unsigned char *digest, int *digest_len);
-
-struct pdf_pkcs7_signer_s
-{
-	pdf_pkcs7_keep_fn *keep;
-	pdf_pkcs7_drop_fn *drop;
-	pdf_pkcs7_designated_name_fn *designated_name;
-	pdf_pkcs7_drop_designated_name_fn *drop_designated_name;
-	pdf_pkcs7_max_digest_size_fn *max_digest_size;
-	pdf_pkcs7_create_digest_fn *create_digest;
-};
-
 /* Unsaved signature fields */
+typedef struct pdf_pkcs7_signer_s pdf_pkcs7_signer;
 typedef struct pdf_unsaved_sig_s pdf_unsaved_sig;
 
 struct pdf_unsaved_sig_s
 {
 	pdf_obj *field;
-	int byte_range_start;
-	int byte_range_end;
-	int contents_start;
-	int contents_end;
+	size_t byte_range_start;
+	size_t byte_range_end;
+	size_t contents_start;
+	size_t contents_end;
 	pdf_pkcs7_signer *signer;
 	pdf_unsaved_sig *next;
 };
@@ -197,6 +148,16 @@ typedef struct
 	int64_t offset; /* Offset of first object */
 } pdf_hint_shared;
 
+typedef struct {
+	char *key;
+	fz_xml_doc *value;
+} pdf_xfa_entry;
+
+typedef struct {
+	int count;
+	pdf_xfa_entry *entries;
+} pdf_xfa;
+
 struct pdf_document_s
 {
 	fz_document super;
@@ -219,9 +180,10 @@ struct pdf_document_s
 	pdf_xref *xref_sections;
 	pdf_xref *saved_xref_sections;
 	int *xref_index;
-	int freeze_updates;
+	int save_in_progress;
 	int has_xref_streams;
 	int has_old_style_xrefs;
+	int has_linearization_object;
 
 	int rev_page_count;
 	pdf_rev_page_map *rev_page_map;
@@ -290,6 +252,8 @@ struct pdf_document_s
 	int orphans_max;
 	int orphans_count;
 	pdf_obj **orphans;
+
+	pdf_xfa xfa;
 };
 
 pdf_document *pdf_create_document(fz_context *ctx);
@@ -318,6 +282,9 @@ void pdf_delete_page_range(fz_context *ctx, pdf_document *doc, int start, int en
 void pdf_finish_edit(fz_context *ctx, pdf_document *doc);
 
 int pdf_recognize(fz_context *doc, const char *magic);
+
+fz_text_language pdf_document_language(fz_context *ctx, pdf_document *doc);
+void pdf_set_document_language(fz_context *ctx, pdf_document *doc, fz_text_language lang);
 
 typedef struct pdf_write_options_s pdf_write_options;
 
@@ -355,6 +322,8 @@ int pdf_has_unsaved_sigs(fz_context *ctx, pdf_document *doc);
 void pdf_write_document(fz_context *ctx, pdf_document *doc, fz_output *out, pdf_write_options *opts);
 
 void pdf_save_document(fz_context *ctx, pdf_document *doc, const char *filename, pdf_write_options *opts);
+
+char *pdf_format_write_options(fz_context *ctx, char *buffer, size_t buffer_len, const pdf_write_options *opts);
 
 int pdf_can_be_saved_incrementally(fz_context *ctx, pdf_document *doc);
 

@@ -1,7 +1,7 @@
 #include "mupdf/fitz.h"
-#include "fitz-imp.h"
 
 #include <string.h>
+#include <limits.h>
 
 #include <zlib.h>
 
@@ -33,7 +33,7 @@ struct fz_zip_archive_s
 {
 	fz_archive super;
 
-	uint64_t count;
+	int count;
 	zip_entry *entries;
 };
 
@@ -118,7 +118,9 @@ static void read_zip_dir_imp(fz_context *ctx, fz_zip_archive *zip, int64_t start
 
 	fz_try(ctx)
 	{
-		for (i = 0; i < count; i++)
+		if (count > INT_MAX)
+			count = INT_MAX;
+		for (i = 0; i < (int)count; i++)
 		{
 			sig = fz_read_uint32_le(ctx, file);
 			if (sig != ZIP_CENTRAL_DIRECTORY_SIG)
@@ -144,7 +146,7 @@ static void read_zip_dir_imp(fz_context *ctx, fz_zip_archive *zip, int64_t start
 			if (namesize < 0 || metasize < 0 || commentsize < 0)
 				fz_throw(ctx, FZ_ERROR_GENERIC, "invalid size in zip entry");
 
-			name = fz_malloc(ctx, namesize + 1);
+			name = Memento_label(fz_malloc(ctx, namesize + 1), "zip_name");
 
 			n = fz_read(ctx, file, (unsigned char*)name, namesize);
 			if (n < (size_t)namesize)
@@ -185,7 +187,7 @@ static void read_zip_dir_imp(fz_context *ctx, fz_zip_archive *zip, int64_t start
 
 			fz_seek(ctx, file, commentsize, 1);
 
-			zip->entries = fz_realloc_array(ctx, zip->entries, zip->count + 1, zip_entry);
+			zip->entries = Memento_label(fz_realloc_array(ctx, zip->entries, zip->count + 1, zip_entry), "zip_entries");
 
 			zip->entries[zip->count].offset = offset;
 			zip->entries[zip->count].csize = csize;
@@ -303,7 +305,7 @@ static fz_buffer *read_zip_entry(fz_context *ctx, fz_archive *arch, const char *
 	int method;
 	z_stream z;
 	int code;
-	int len;
+	uint64_t len;
 	zip_entry *ent;
 
 	fz_var(cbuf);

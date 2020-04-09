@@ -420,7 +420,7 @@ fz_format_string(fz_context *ctx, void *user, void (*emit)(fz_context *ctx, void
 
 			case 'p':
 				bits = 8 * sizeof(void *);
-				w = 2 * sizeof(void *);
+				z = '0';
 				fmtputc(&out, '0');
 				fmtputc(&out, 'x');
 				/* fallthrough */
@@ -550,13 +550,13 @@ fz_snprintf(char *buffer, size_t space, const char *fmt, ...)
 char *
 fz_asprintf(fz_context *ctx, const char *fmt, ...)
 {
-	int len;
+	size_t len;
 	char *mem;
 	va_list ap;
 	va_start(ap, fmt);
 	len = fz_vsnprintf(NULL, 0, fmt, ap);
 	va_end(ap);
-	mem = fz_malloc(ctx, len+1);
+	mem = Memento_label(fz_malloc(ctx, len+1), "asprintf");
 	va_start(ap, fmt);
 	fz_vsnprintf(mem, len+1, fmt, ap);
 	va_end(ap);

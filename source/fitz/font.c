@@ -1,6 +1,5 @@
 #include "mupdf/fitz.h"
 #include "mupdf/ucdn.h"
-#include "fitz-imp.h"
 #include "draw-imp.h"
 
 #include <ft2build.h>
@@ -108,7 +107,7 @@ fz_new_font(fz_context *ctx, const char *name, int use_glyph_bbox, int glyph_cou
 	if (use_glyph_bbox && glyph_count <= MAX_BBOX_TABLE_SIZE)
 	{
 		fz_try(ctx)
-			font->bbox_table = fz_malloc_array(ctx, glyph_count, fz_rect);
+			font->bbox_table = Memento_label(fz_malloc_array(ctx, glyph_count, fz_rect), "font_bbox_table");
 		fz_catch(ctx)
 		{
 			fz_free(ctx, font);
@@ -335,7 +334,7 @@ struct ft_error
 static void *ft_alloc(FT_Memory memory, long size)
 {
 	fz_context *ctx = (fz_context *) memory->user;
-	return fz_malloc_no_throw(ctx, size);
+	return Memento_label(fz_malloc_no_throw(ctx, size), "ft_alloc");
 }
 
 static void ft_free(FT_Memory memory, void *block)
@@ -388,11 +387,11 @@ void fz_drop_font_context(fz_context *ctx)
 	{
 		int i;
 
-		for (i = 0; i < nelem(ctx->font->base14); ++i)
+		for (i = 0; i < (int)nelem(ctx->font->base14); ++i)
 			fz_drop_font(ctx, ctx->font->base14[i]);
-		for (i = 0; i < nelem(ctx->font->cjk); ++i)
+		for (i = 0; i < (int)nelem(ctx->font->cjk); ++i)
 			fz_drop_font(ctx, ctx->font->cjk[i]);
-		for (i = 0; i < nelem(ctx->font->fallback); ++i)
+		for (i = 0; i < (int)nelem(ctx->font->fallback); ++i)
 		{
 			fz_drop_font(ctx, ctx->font->fallback[i].serif);
 			fz_drop_font(ctx, ctx->font->fallback[i].sans);
@@ -524,7 +523,7 @@ fz_font *fz_load_fallback_font(fz_context *ctx, int script, int language, int se
 	int subfont;
 	int size;
 
-	if (script < 0 || script > nelem(ctx->font->fallback))
+	if (script < 0 || script >= (int)nelem(ctx->font->fallback))
 		return NULL;
 
 	/* TODO: bold and italic */
@@ -933,7 +932,7 @@ fz_new_cjk_font(fz_context *ctx, int ordering)
 {
 	const unsigned char *data;
 	int size, index;
-	if (ordering >= 0 && ordering < nelem(ctx->font->cjk))
+	if (ordering >= 0 && ordering < (int)nelem(ctx->font->cjk))
 	{
 		if (ctx->font->cjk[ordering])
 			return fz_keep_font(ctx, ctx->font->cjk[ordering]);
@@ -992,6 +991,7 @@ fz_adjust_ft_glyph_width(fz_context *ctx, fz_font *font, int gid, fz_matrix *trm
 static fz_glyph *
 glyph_from_ft_bitmap(fz_context *ctx, int left, int top, FT_Bitmap *bitmap)
 {
+	(void)Memento_label(bitmap->buffer, "ft_bitmap");
 	if (bitmap->pixel_mode == FT_PIXEL_MODE_MONO)
 		return fz_new_glyph_from_1bpp_data(ctx, left, top - bitmap->rows, bitmap->width, bitmap->rows, bitmap->buffer + (bitmap->rows-1)*bitmap->pitch, -bitmap->pitch);
 	else
@@ -1001,6 +1001,7 @@ glyph_from_ft_bitmap(fz_context *ctx, int left, int top, FT_Bitmap *bitmap)
 static fz_pixmap *
 pixmap_from_ft_bitmap(fz_context *ctx, int left, int top, FT_Bitmap *bitmap)
 {
+	(void)Memento_label(bitmap->buffer, "ft_bitmap");
 	if (bitmap->pixel_mode == FT_PIXEL_MODE_MONO)
 		return fz_new_pixmap_from_1bpp_data(ctx, left, top - bitmap->rows, bitmap->width, bitmap->rows, bitmap->buffer + (bitmap->rows-1)*bitmap->pitch, -bitmap->pitch);
 	else
@@ -1602,7 +1603,7 @@ fz_prepare_t3_glyph(fz_context *ctx, fz_font *font, int gid)
 
 	/* Avoid cycles in glyph content streams referring to the glyph itself.
 	 * Remember to restore the content stream below, regardless of exceptions
-	 * or a sucessful run of the glyph. */
+	 * or a successful run of the glyph. */
 	font->t3procs[gid] = NULL;
 
 	fz_try(ctx)
@@ -1790,7 +1791,7 @@ fz_render_t3_glyph_direct(fz_context *ctx, fz_device *dev, fz_font *font, int gi
 
 	/* Avoid cycles in glyph content streams referring to the glyph itself.
 	 * Remember to restore the content stream below, regardless of exceptions
-	 * or a sucessful run of the glyph. */
+	 * or a successful run of the glyph. */
 	font->t3procs[gid] = NULL;
 
 	fz_try(ctx)
@@ -1842,8 +1843,8 @@ fz_bound_glyph(fz_context *ctx, fz_font *font, int gid, fz_matrix trm)
 			{
 				font->bbox_table[gid].x0 = 0;
 				font->bbox_table[gid].y0 = 0;
-				font->bbox_table[gid].x1 = 0.0000001;
-				font->bbox_table[gid].y1 = 0.0000001;
+				font->bbox_table[gid].x1 = 0.0000001f;
+				font->bbox_table[gid].y1 = 0.0000001f;
 			}
 		}
 		rect = font->bbox_table[gid];
@@ -1988,7 +1989,7 @@ fz_advance_glyph(fz_context *ctx, fz_font *font, int gid, int wmode)
 			if (!font->advance_cache)
 			{
 				int i;
-				font->advance_cache = fz_malloc_array(ctx, font->glyph_count, float);
+				font->advance_cache = Memento_label(fz_malloc_array(ctx, font->glyph_count, float), "font_advance_cache");
 				for (i = 0; i < font->glyph_count; ++i)
 					font->advance_cache[i] = fz_advance_ft_glyph(ctx, font, i, 0);
 			}

@@ -50,7 +50,7 @@ fz_option_eq(const char *a, const char *b)
 	return !strncmp(a, b, n) && (a[n] == ',' || a[n] == 0);
 }
 
-int
+size_t
 fz_copy_option(fz_context *ctx, const char *val, char *dest, size_t maxlen)
 {
 	const char *e = val;
@@ -199,6 +199,41 @@ fz_new_document_writer(fz_context *ctx, const char *path, const char *format, co
 }
 
 /*
+ * Like fz_new_document_writer but takes a fz_output for writing the result.
+ * Only works for multi-page formats.
+ */
+fz_document_writer *
+fz_new_document_writer_with_output(fz_context *ctx, fz_output *out, const char *format, const char *options)
+{
+	if (!fz_strcasecmp(format, "cbz"))
+		return fz_new_cbz_writer_with_output(ctx, out, options);
+#if FZ_ENABLE_PDF
+	if (!fz_strcasecmp(format, "pdf"))
+		return fz_new_pdf_writer_with_output(ctx, out, options);
+#endif
+
+	if (!fz_strcasecmp(format, "pcl"))
+		return fz_new_pcl_writer_with_output(ctx, out, options);
+	if (!fz_strcasecmp(format, "pclm"))
+		return fz_new_pclm_writer_with_output(ctx, out, options);
+	if (!fz_strcasecmp(format, "ps"))
+		return fz_new_ps_writer_with_output(ctx, out, options);
+	if (!fz_strcasecmp(format, "pwg"))
+		return fz_new_pwg_writer_with_output(ctx, out, options);
+
+	if (!fz_strcasecmp(format, "txt") || !fz_strcasecmp(format, "text"))
+		return fz_new_text_writer_with_output(ctx, "text", out, options);
+	if (!fz_strcasecmp(format, "html"))
+		return fz_new_text_writer_with_output(ctx, format, out, options);
+	if (!fz_strcasecmp(format, "xhtml"))
+		return fz_new_text_writer_with_output(ctx, format, out, options);
+	if (!fz_strcasecmp(format, "stext"))
+		return fz_new_text_writer_with_output(ctx, format, out, options);
+
+	fz_throw(ctx, FZ_ERROR_GENERIC, "unknown output document format: %s", format);
+}
+
+/*
 	Called to end the process of writing
 	pages to a document.
 
@@ -242,7 +277,10 @@ fz_drop_document_writer(fz_context *ctx, fz_document_writer *wri)
 
 	mediabox: page size rectangle in points.
 
-	Returns a fz_device to write page contents to.
+	Returns a fz_device to write page contents to. This is
+	owned by the fz_document_writer and should not be passed to
+	fz_drop_device(). [Copies created with fz_keep_device() are owned by
+	the caller and should be passed to fz_drop_device() in the usual way.]
 */
 fz_device *
 fz_begin_page(fz_context *ctx, fz_document_writer *wri, fz_rect mediabox)

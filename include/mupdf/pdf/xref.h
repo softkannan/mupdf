@@ -75,6 +75,7 @@ fz_stream *pdf_open_stream_with_offset(fz_context *ctx, pdf_document *doc, int n
 fz_stream *pdf_open_compressed_stream(fz_context *ctx, fz_compressed_buffer *);
 fz_stream *pdf_open_contents_stream(fz_context *ctx, pdf_document *doc, pdf_obj *obj);
 
+int pdf_version(fz_context *ctx, pdf_document *doc);
 pdf_obj *pdf_trailer(fz_context *ctx, pdf_document *doc);
 void pdf_set_populating_xref_trailer(fz_context *ctx, pdf_document *doc, pdf_obj *trailer);
 int pdf_xref_len(fz_context *ctx, pdf_document *doc);
@@ -97,5 +98,21 @@ void pdf_clear_xref_to_mark(fz_context *ctx, pdf_document *doc);
 int pdf_repair_obj(fz_context *ctx, pdf_document *doc, pdf_lexbuf *buf, int64_t *stmofsp, int *stmlenp, pdf_obj **encrypt, pdf_obj **id, pdf_obj **page, int64_t *tmpofs, pdf_obj **root);
 
 pdf_obj *pdf_progressive_advance(fz_context *ctx, pdf_document *doc, int pagenum);
+
+int pdf_count_versions(fz_context *ctx, pdf_document *doc);
+int pdf_count_unsaved_versions(fz_context *ctx, pdf_document *doc);
+int pdf_validate_changes(fz_context *ctx, pdf_document *doc, int version);
+int pdf_doc_was_linearized(fz_context *ctx, pdf_document *doc);
+
+typedef struct pdf_locked_fields_s pdf_locked_fields;
+int pdf_is_field_locked(fz_context *ctx, pdf_locked_fields *locked, const char *name);
+void pdf_drop_locked_fields(fz_context *ctx, pdf_locked_fields *locked);
+pdf_locked_fields *pdf_find_locked_fields(fz_context *ctx, pdf_document *doc, int version);
+pdf_locked_fields *pdf_find_locked_fields_for_sig(fz_context *ctx, pdf_document *doc, pdf_obj *sig);
+int pdf_validate_change_history(fz_context *ctx, pdf_document *doc);
+
+int pdf_find_version_for_obj(fz_context *ctx, pdf_document *doc, pdf_obj *obj);
+int pdf_validate_signature(fz_context *ctx, pdf_widget *widget);
+int pdf_was_pure_xfa(fz_context *ctx, pdf_document *doc);
 
 #endif

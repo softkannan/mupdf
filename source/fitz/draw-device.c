@@ -1,4 +1,4 @@
-#include "fitz-imp.h"
+#include "mupdf/fitz.h"
 #include "draw-imp.h"
 
 #include <string.h>
@@ -155,7 +155,7 @@ static void grow_stack(fz_context *ctx, fz_draw_device *dev)
 	{
 		stack = fz_realloc_array(ctx, dev->stack, max, fz_draw_state);
 	}
-	dev->stack = stack;
+	dev->stack = Memento_label(stack, "draw_stack");
 	dev->stack_cap = max;
 }
 
@@ -538,7 +538,7 @@ resolve_color(fz_context *ctx,
 	}
 	colorbv[i] = alpha * 255;
 
-	/* op && !devn => overpinting in cmyk or devicegray. */
+	/* op && !devn => overprinting in cmyk or devicegray. */
 	if (op && !devn)
 	{
 		/* We are overprinting, so protect all spots. */
@@ -574,7 +574,7 @@ push_group_for_separations(fz_context *ctx, fz_draw_device *dev, fz_color_params
 		dcs = oi;
 	}
 
-	/* Not needed if dest has the seps, and we are not using a proof or the target is the same as the prooof and we don't have an oi or the target is the same as the oi */
+	/* Not needed if dest has the seps, and we are not using a proof or the target is the same as the proof and we don't have an oi or the target is the same as the oi */
 	if ((clone == dev->stack[0].dest->seps) && (dev->proof_cs == NULL || dev->proof_cs == dev->stack[0].dest->colorspace) && (oi == NULL || oi == dev->stack[0].dest->colorspace))
 	{
 		fz_drop_separations(ctx, clone);
@@ -2480,7 +2480,7 @@ fz_cmp_tile_key(fz_context *ctx, void *k0_, void *k1_)
 }
 
 static void
-fz_format_tile_key(fz_context *ctx, char *s, int n, void *key_)
+fz_format_tile_key(fz_context *ctx, char *s, size_t n, void *key_)
 {
 	tile_key *key = (tile_key *)key_;
 	fz_snprintf(s, n, "(tile id=%x, ctm=%g %g %g %g, cs=%x, shape=%d, ga=%d)",

@@ -605,7 +605,7 @@ static void guess_paper_size(fz_pcl_options *pcl, int w, int h, int xres, int yr
 	h = h * 300 / xres;
 
 	/* Look for an exact match */
-	for (size = 0; size < num_elems(papersizes); size++)
+	for (size = 0; size < (int)num_elems(papersizes); size++)
 	{
 		if (papersizes[size].code > eCustomPaperSize && (pcl->features & PCL_HAS_RICOH_PAPER_SIZES) == 0)
 			continue;
@@ -632,7 +632,7 @@ static void guess_paper_size(fz_pcl_options *pcl, int w, int h, int xres, int yr
 			/* Send the next larger one (minimise waste) */
 			int i;
 			int best_waste = INT_MAX;
-			for (i = 0; i < num_elems(papersizes); i++)
+			for (i = 0; i < (int)num_elems(papersizes); i++)
 			{
 				int waste;
 				if (papersizes[i].code > eCustomPaperSize && (pcl->features & PCL_HAS_RICOH_PAPER_SIZES) == 0)
@@ -658,7 +658,7 @@ static void guess_paper_size(fz_pcl_options *pcl, int w, int h, int xres, int yr
 
 	/* Now, size = The best size we have (or num_elems(papersizes)) if it's too big */
 
-	if (size < num_elems(papersizes))
+	if (size < (int)num_elems(papersizes))
 		pcl->paper_size = papersizes[size].code;
 	else
 		pcl->paper_size = eCustomPaperSize; /* Custom */
@@ -791,7 +791,7 @@ color_pcl_write_header(fz_context *ctx, fz_band_writer *writer_, fz_colorspace *
 	if (n != 3)
 		fz_throw(ctx, FZ_ERROR_GENERIC, "color PCL must be RGB");
 
-	writer->linebuf = fz_malloc(ctx, w * 3 * 2);
+	writer->linebuf = Memento_label(fz_malloc(ctx, w * 3 * 2), "color_pcl_linebuf");
 
 	guess_paper_size(&writer->options, w, h, xres, yres);
 
@@ -1526,7 +1526,7 @@ pcl_drop_writer(fz_context *ctx, fz_document_writer *wri_)
 }
 
 fz_document_writer *
-fz_new_pcl_writer(fz_context *ctx, const char *path, const char *options)
+fz_new_pcl_writer_with_output(fz_context *ctx, fz_output *out, const char *options)
 {
 	fz_pcl_writer *wri = fz_new_derived_document_writer(ctx, fz_pcl_writer, pcl_begin_page, pcl_end_page, pcl_close_writer, pcl_drop_writer);
 	const char *val;
@@ -1538,14 +1538,28 @@ fz_new_pcl_writer(fz_context *ctx, const char *path, const char *options)
 		if (fz_has_option(ctx, options, "colorspace", &val))
 			if (fz_option_eq(val, "mono"))
 				wri->mono = 1;
-		wri->out = fz_new_output_with_path(ctx, path ? path : "out.pcl", 0);
+		wri->out = out;
 	}
 	fz_catch(ctx)
 	{
-		fz_drop_output(ctx, wri->out);
 		fz_free(ctx, wri);
 		fz_rethrow(ctx);
 	}
 
 	return (fz_document_writer*)wri;
+}
+
+fz_document_writer *
+fz_new_pcl_writer(fz_context *ctx, const char *path, const char *options)
+{
+	fz_output *out = fz_new_output_with_path(ctx, path ? path : "out.pcl", 0);
+	fz_document_writer *wri = NULL;
+	fz_try(ctx)
+		wri = fz_new_pcl_writer_with_output(ctx, out, options);
+	fz_catch(ctx)
+	{
+		fz_drop_output(ctx, out);
+		fz_rethrow(ctx);
+	}
+	return wri;
 }

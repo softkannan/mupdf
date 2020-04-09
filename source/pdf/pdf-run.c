@@ -16,6 +16,17 @@ pdf_run_annot_with_usage(fz_context *ctx, pdf_document *doc, pdf_page *page, pdf
 	if (cookie && page->super.incomplete)
 		cookie->incomplete = 1;
 
+	/* Widgets only get displayed if they have both a T and a TF flag,
+	 * apparently */
+	if (pdf_name_eq(ctx, pdf_dict_get(ctx, annot->obj, PDF_NAME(Subtype)), PDF_NAME(Widget)))
+	{
+		pdf_obj *ft = pdf_dict_get_inheritable(ctx, annot->obj, PDF_NAME(FT));
+		pdf_obj *t = pdf_dict_get_inheritable(ctx, annot->obj, PDF_NAME(T));
+
+		if (ft == NULL || t == NULL)
+			return;
+	}
+
 	fz_try(ctx)
 	{
 		default_cs = pdf_load_default_colorspaces(ctx, doc, page);
@@ -208,7 +219,7 @@ pdf_run_page_widgets_with_usage(fz_context *ctx, pdf_document *doc, pdf_page *pa
 {
 	pdf_widget *widget;
 
-	if (cookie && cookie->progress_max != -1)
+	if (cookie && cookie->progress_max != (size_t)-1)
 	{
 		int count = 1;
 		for (widget = page->widgets; widget; widget = widget->next)
@@ -235,7 +246,7 @@ pdf_run_page_annots_with_usage(fz_context *ctx, pdf_document *doc, pdf_page *pag
 {
 	pdf_annot *annot;
 
-	if (cookie && cookie->progress_max != -1)
+	if (cookie && cookie->progress_max != (size_t)-1)
 	{
 		int count = 1;
 		for (annot = page->annots; annot; annot = annot->next)

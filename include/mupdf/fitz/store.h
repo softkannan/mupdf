@@ -155,7 +155,7 @@ typedef struct fz_store_type_s
 	void *(*keep_key)(fz_context *ctx, void *key);
 	void (*drop_key)(fz_context *ctx, void *key);
 	int (*cmp_key)(fz_context *ctx, void *a, void *b);
-	void (*format_key)(fz_context *ctx, char *buf, int size, void *key);
+	void (*format_key)(fz_context *ctx, char *buf, size_t size, void *key);
 	int (*needs_reap)(fz_context *ctx, void *key);
 } fz_store_type;
 
@@ -182,7 +182,7 @@ typedef int (fz_store_filter_fn)(fz_context *ctx, void *arg, void *key);
 
 void fz_filter_store(fz_context *ctx, fz_store_filter_fn *fn, void *arg, const fz_store_type *type);
 
-void fz_debug_store(fz_context *ctx);
+void fz_debug_store(fz_context *ctx, fz_output *out);
 
 void fz_defer_reap_start(fz_context *ctx);
 

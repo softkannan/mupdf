@@ -1,5 +1,4 @@
 #include "mupdf/fitz.h"
-#include "fitz-imp.h"
 
 #include <string.h>
 #include <assert.h>
@@ -186,11 +185,11 @@ int fz_packed_path_size(const fz_path *path)
 	or 'flat' packed. Simply pack a path (if required), and then
 	forget about the details.
 */
-int
-fz_pack_path(fz_context *ctx, uint8_t *pack_, int max, const fz_path *path)
+size_t
+fz_pack_path(fz_context *ctx, uint8_t *pack_, size_t max, const fz_path *path)
 {
 	uint8_t *ptr;
-	int size;
+	size_t size;
 
 	if (path->packed)
 		fz_throw(ctx, FZ_ERROR_GENERIC, "Can't repack a packed path");
@@ -217,10 +216,10 @@ fz_pack_path(fz_context *ctx, uint8_t *pack_, int max, const fz_path *path)
 			pack->coord_len = path->coord_len;
 			pack->cmd_cap = path->cmd_len;
 			pack->cmd_len = path->cmd_len;
-			pack->coords = fz_malloc_array(ctx, path->coord_len, float);
+			pack->coords = Memento_label(fz_malloc_array(ctx, path->coord_len, float), "path_packed_coords");
 			fz_try(ctx)
 			{
-				pack->cmds = fz_malloc_array(ctx, path->cmd_len, uint8_t);
+				pack->cmds = Memento_label(fz_malloc_array(ctx, path->cmd_len, uint8_t), "path_packed_cmds");
 			}
 			fz_catch(ctx)
 			{
@@ -1755,10 +1754,10 @@ fz_clone_path(fz_context *ctx, fz_path *path)
 		case FZ_PATH_PACKED_OPEN:
 			new_path->cmd_len = path->cmd_len;
 			new_path->cmd_cap = path->cmd_cap;
-			new_path->cmds = clone_block(ctx, path->cmds, path->cmd_cap);
+			new_path->cmds = Memento_label(clone_block(ctx, path->cmds, path->cmd_cap), "path_cmds");
 			new_path->coord_len = path->coord_len;
 			new_path->coord_cap = path->coord_cap;
-			new_path->coords = clone_block(ctx, path->coords, sizeof(float)*path->coord_cap);
+			new_path->coords = Memento_label(clone_block(ctx, path->coords, sizeof(float)*path->coord_cap), "path_coords");
 			new_path->current = path->current;
 			new_path->begin = path->begin;
 			break;
@@ -1774,9 +1773,9 @@ fz_clone_path(fz_context *ctx, fz_path *path)
 				new_path->coord_len = ppath->coord_len;
 				new_path->coord_cap = ppath->coord_len;
 				data = (uint8_t *)&ppath[1];
-				new_path->coords = clone_block(ctx, data, sizeof(float)*path->coord_cap);
+				new_path->coords = Memento_label(clone_block(ctx, data, sizeof(float)*path->coord_cap), "path_coords");
 				data += sizeof(float) * path->coord_cap;
-				new_path->cmds = clone_block(ctx, data, path->cmd_cap);
+				new_path->cmds = Memento_label(clone_block(ctx, data, path->cmd_cap), "path_cmds");
 				xy = new_path->coords;
 				for (i = 0; i < new_path->cmd_len; i++)
 				{

@@ -5,6 +5,7 @@
 
 int pdf_lookup_page_number(fz_context *ctx, pdf_document *doc, pdf_obj *pageobj);
 int pdf_count_pages(fz_context *ctx, pdf_document *doc);
+int pdf_count_pages_imp(fz_context *ctx, fz_document *doc, int chapter);
 pdf_obj *pdf_lookup_page_obj(fz_context *ctx, pdf_document *doc, int needle);
 void pdf_load_page_tree(fz_context *ctx, pdf_document *doc);
 void pdf_drop_page_tree(fz_context *ctx, pdf_document *doc);
@@ -14,6 +15,7 @@ int pdf_lookup_anchor(fz_context *ctx, pdf_document *doc, const char *name, floa
 void pdf_flatten_inheritable_page_items(fz_context *ctx, pdf_obj *page);
 
 pdf_page *pdf_load_page(fz_context *ctx, pdf_document *doc, int number);
+fz_page *pdf_load_page_imp(fz_context *ctx, fz_document *doc, int chapter, int number);
 
 void pdf_page_obj_transform(fz_context *ctx, pdf_obj *pageobj, fz_rect *page_mediabox, fz_matrix *page_ctm);
 void pdf_page_transform(fz_context *ctx, pdf_page *page, fz_rect *mediabox, fz_matrix *ctm);
@@ -39,38 +41,15 @@ void pdf_run_page_contents(fz_context *ctx, pdf_page *page, fz_device *dev, fz_m
 void pdf_run_page_annots(fz_context *ctx, pdf_page *page, fz_device *dev, fz_matrix ctm, fz_cookie *cookie);
 void pdf_run_page_widgets(fz_context *ctx, pdf_page *page, fz_device *dev, fz_matrix ctm, fz_cookie *cookie);
 
-/*
-	A function used for processing the
-	cleaned page contents/resources gathered as part of
-	pdf_clean_page_contents.
-
-	buffer: A buffer holding the page contents.
-
-	res: A pdf_obj holding the page resources.
-
-	arg: An opaque arg specific to the particular function.
-*/
-typedef void (pdf_page_contents_process_fn)(fz_context *ctx, fz_buffer *buffer, pdf_obj *res, void *arg);
-
-void pdf_clean_page_contents(fz_context *ctx, pdf_document *doc, pdf_page *page, fz_cookie *cookie,
-	pdf_page_contents_process_fn *proc, void *proc_arg, int sanitize, int ascii);
-
-void pdf_clean_annot_contents(fz_context *ctx, pdf_document *doc, pdf_annot *annot, fz_cookie *cookie,
-	pdf_page_contents_process_fn *proc, void *proc_arg, int sanitize, int ascii);
-
-void pdf_filter_page_contents(fz_context *ctx, pdf_document *doc, pdf_page *page, fz_cookie *cookie,
-	pdf_page_contents_process_fn *proc_fn, pdf_text_filter_fn *text_filter, pdf_after_text_object_fn *after_text, void *arg,
-	int sanitize, int ascii);
-
-void pdf_filter_annot_contents(fz_context *ctx, pdf_document *doc, pdf_annot *annot, fz_cookie *cookie,
-	pdf_page_contents_process_fn *proc, pdf_text_filter_fn *text_filter, pdf_after_text_object_fn *after_text, void *arg,
-	int sanitize, int ascii);
+void pdf_filter_page_contents(fz_context *ctx, pdf_document *doc, pdf_page *page, pdf_filter_options *filter);
+void pdf_filter_annot_contents(fz_context *ctx, pdf_document *doc, pdf_annot *annot, pdf_filter_options *filter);
 
 typedef struct pdf_redact_options_s pdf_redact_options;
 
 struct pdf_redact_options_s
 {
 	int no_black_boxes;
+	int keep_images;
 };
 
 int pdf_redact_page(fz_context *ctx, pdf_document *doc, pdf_page *page, pdf_redact_options *opts);

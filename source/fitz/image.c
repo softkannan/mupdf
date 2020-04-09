@@ -1,4 +1,4 @@
-#include "fitz-imp.h"
+#include "mupdf/fitz.h"
 
 #include <string.h>
 #include <math.h>
@@ -93,7 +93,7 @@ fz_cmp_image_key(fz_context *ctx, void *k0_, void *k1_)
 }
 
 static void
-fz_format_image_key(fz_context *ctx, char *s, int n, void *key_)
+fz_format_image_key(fz_context *ctx, char *s, size_t n, void *key_)
 {
 	fz_image_key *key = (fz_image_key *)key_;
 	fz_snprintf(s, n, "(image %d x %d sf=%d)", key->image->w, key->image->h, key->l2factor);
@@ -369,9 +369,9 @@ fz_decomp_image_from_stream(fz_context *ctx, fz_stream *stm, fz_compressed_image
 			tile->flags &= ~FZ_PIXMAP_FLAG_INTERPOLATE;
 
 		stride = (w * image->n * image->bpc + 7) / 8;
-		if (h > SIZE_MAX / stride)
+		if ((size_t)h > (size_t)(SIZE_MAX / stride))
 			fz_throw(ctx, FZ_ERROR_MEMORY, "image too large");
-		samples = fz_malloc(ctx, h * stride);
+		samples = Memento_label(fz_malloc(ctx, h * stride), "pixmap_samples");
 
 		if (subarea)
 		{
@@ -910,7 +910,7 @@ fz_new_image_from_pixmap(fz_context *ctx, fz_pixmap *pixmap, fz_image *mask)
 	decode array is [0 1] (repeated n times, for n color components).
 
 	colorkey: NULL, or a pointer to a colorkey array. The default
-	colorkey array is [0 255] (repeatd n times, for n color
+	colorkey array is [0 255] (repeated n times, for n color
 	components).
 
 	mask: NULL, or another image to use as a mask for this one.
@@ -935,7 +935,7 @@ fz_new_image_from_pixmap(fz_context *ctx, fz_pixmap *pixmap, fz_image *mask)
 fz_image *
 fz_new_image_of_size(fz_context *ctx, int w, int h, int bpc, fz_colorspace *colorspace,
 		int xres, int yres, int interpolate, int imagemask, float *decode,
-		int *colorkey, fz_image *mask, int size,
+		int *colorkey, fz_image *mask, size_t size,
 		fz_image_get_pixmap_fn *get_pixmap,
 		fz_image_get_size_fn *get_size,
 		fz_drop_image_fn *drop)
@@ -1036,7 +1036,7 @@ compressed_image_get_size(fz_context *ctx, fz_image *image)
 	decode array is [0 1] (repeated n times, for n color components).
 
 	colorkey: NULL, or a pointer to a colorkey array. The default
-	colorkey array is [0 255] (repeatd n times, for n color
+	colorkey array is [0 255] (repeated n times, for n color
 	components).
 
 	buffer: Buffer of compressed data and compression parameters.
@@ -1182,11 +1182,13 @@ fz_new_image_from_buffer(fz_context *ctx, fz_buffer *buffer)
 	unsigned char *buf = buffer->data;
 	fz_image *image = NULL;
 	int type;
+	int bpc;
 
 	if (len < 8)
 		fz_throw(ctx, FZ_ERROR_GENERIC, "unknown image file format");
 
 	type = fz_recognize_image_format(ctx, buf);
+	bpc = 8;
 	switch (type)
 	{
 	case FZ_IMAGE_PNM:
@@ -1215,6 +1217,7 @@ fz_new_image_from_buffer(fz_context *ctx, fz_buffer *buffer)
 		break;
 	case FZ_IMAGE_JBIG2:
 		fz_load_jbig2_info(ctx, buf, len, &w, &h, &xres, &yres, &cspace);
+		bpc = 1;
 		break;
 	default:
 		fz_throw(ctx, FZ_ERROR_GENERIC, "unknown image file format");
@@ -1227,7 +1230,7 @@ fz_new_image_from_buffer(fz_context *ctx, fz_buffer *buffer)
 		bc->params.type = type;
 		if (type == FZ_IMAGE_JPEG)
 			bc->params.u.jpeg.color_transform = -1;
-		image = fz_new_image_from_compressed_buffer(ctx, w, h, 8, cspace, xres, yres, 0, 0, NULL, NULL, bc, NULL);
+		image = fz_new_image_from_compressed_buffer(ctx, w, h, bpc, cspace, xres, yres, 0, 0, NULL, NULL, bc, NULL);
 	}
 	fz_always(ctx)
 		fz_drop_colorspace(ctx, cspace);
@@ -1289,12 +1292,7 @@ fz_image_resolution(fz_image *image, int *xres, int *yres)
 	/* Scale xres and yres up until we get believable values */
 	if (*xres < SANE_DPI || *yres < SANE_DPI || *xres > INSANE_DPI || *yres > INSANE_DPI)
 	{
-		if (*xres == *yres)
-		{
-			*xres = SANE_DPI;
-			*yres = SANE_DPI;
-		}
-		else if (*xres < *yres)
+		if (*xres < *yres)
 		{
 			*yres = *yres * SANE_DPI / *xres;
 			*xres = SANE_DPI;
@@ -1302,6 +1300,12 @@ fz_image_resolution(fz_image *image, int *xres, int *yres)
 		else
 		{
 			*xres = *xres * SANE_DPI / *yres;
+			*yres = SANE_DPI;
+		}
+
+		if (*xres == *yres || *xres < SANE_DPI || *yres < SANE_DPI || *xres > INSANE_DPI || *yres > INSANE_DPI)
+		{
+			*xres = SANE_DPI;
 			*yres = SANE_DPI;
 		}
 	}

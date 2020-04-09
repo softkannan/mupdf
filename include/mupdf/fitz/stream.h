@@ -18,6 +18,8 @@ int fz_file_exists(fz_context *ctx, const char *path);
 */
 typedef struct fz_stream_s fz_stream;
 
+fz_stream *fz_open_file_ptr_no_close(fz_context *ctx, FILE *file);
+
 fz_stream *fz_open_file(fz_context *ctx, const char *filename);
 
 fz_stream *fz_open_file_w(fz_context *ctx, const wchar_t *filename);
@@ -59,6 +61,9 @@ int64_t fz_read_int64(fz_context *ctx, fz_stream *stm);
 int16_t fz_read_int16_le(fz_context *ctx, fz_stream *stm);
 int32_t fz_read_int32_le(fz_context *ctx, fz_stream *stm);
 int64_t fz_read_int64_le(fz_context *ctx, fz_stream *stm);
+
+float fz_read_float_le(fz_context *ctx, fz_stream *stm);
+float fz_read_float(fz_context *ctx, fz_stream *stm);
 
 void fz_read_string(fz_context *ctx, fz_stream *stm, char *buffer, int len);
 

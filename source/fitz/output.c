@@ -4,12 +4,16 @@
 #endif
 
 #include "mupdf/fitz.h"
-#include "fitz-imp.h"
 
 #include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#ifdef _WIN32
+#include <io.h>
+#else
+#include <unistd.h>
+#endif
 
 static void
 file_write(fz_context *ctx, void *opaque, const void *buffer, size_t count)
@@ -50,6 +54,25 @@ static fz_output fz_stdout_global = {
 fz_output *fz_stdout(fz_context *ctx)
 {
 	return &fz_stdout_global;
+}
+
+static void
+stderr_write(fz_context *ctx, void *opaque, const void *buffer, size_t count)
+{
+	file_write(ctx, stderr, buffer, count);
+}
+
+static fz_output fz_stderr_global = {
+	NULL,
+	stderr_write,
+	NULL,
+	NULL,
+	NULL,
+};
+
+fz_output *fz_stderr(fz_context *ctx)
+{
+	return &fz_stderr_global;
 }
 
 static void
@@ -96,6 +119,18 @@ file_as_stream(fz_context *ctx, void *opaque)
 	return fz_open_file_ptr_no_close(ctx, file);
 }
 
+static void file_truncate(fz_context *ctx, void *opaque)
+{
+	FILE *file = opaque;
+	fflush(file);
+
+#ifdef _WIN32
+	_chsize_s(fileno(file), ftell(file));
+#else
+	ftruncate(fileno(file), ftell(file));
+#endif
+}
+
 /*
 	Create a new output object with the given
 	internal state and function pointers.
@@ -123,7 +158,7 @@ fz_new_output(fz_context *ctx, int bufsiz, void *state, fz_output_write_fn *writ
 		out->drop = drop;
 		if (bufsiz > 0)
 		{
-			out->bp = fz_malloc(ctx, bufsiz);
+			out->bp = Memento_label(fz_malloc(ctx, bufsiz), "output_buf");
 			out->wp = out->bp;
 			out->ep = out->bp + bufsiz;
 		}
@@ -169,6 +204,13 @@ fz_new_output_with_path(fz_context *ctx, const char *filename, int append)
 				fz_throw(ctx, FZ_ERROR_GENERIC, "cannot remove file '%s': %s", filename, strerror(errno));
 	}
 	file = fz_fopen_utf8(filename, append ? "rb+" : "wb+");
+	if (append)
+	{
+		if (file == NULL)
+			file = fz_fopen_utf8(filename, "wb+");
+		else
+			fseek(file, 0, SEEK_END);
+	}
 #else
 	/* Ensure we create a brand new file. We don't want to clobber our old file. */
 	if (!append)
@@ -178,6 +220,8 @@ fz_new_output_with_path(fz_context *ctx, const char *filename, int append)
 				fz_throw(ctx, FZ_ERROR_GENERIC, "cannot remove file '%s': %s", filename, strerror(errno));
 	}
 	file = fopen(filename, append ? "rb+" : "wb+");
+	if (file == NULL && append)
+		file = fopen(filename, "wb+");
 #endif
 	if (!file)
 		fz_throw(ctx, FZ_ERROR_GENERIC, "cannot open file '%s': %s", filename, strerror(errno));
@@ -187,6 +231,7 @@ fz_new_output_with_path(fz_context *ctx, const char *filename, int append)
 	out->seek = file_seek;
 	out->tell = file_tell;
 	out->as_stream = file_as_stream;
+	out->truncate = file_truncate;
 
 	return out;
 }
@@ -260,7 +305,7 @@ fz_drop_output(fz_context *ctx, fz_output *out)
 		if (out->drop)
 			out->drop(ctx, out->state);
 		fz_free(ctx, out->bp);
-		if (out != &fz_stdout_global)
+		if (out != &fz_stdout_global && out != &fz_stderr_global)
 			fz_free(ctx, out);
 	}
 }
@@ -310,6 +355,15 @@ fz_stream_from_output(fz_context *ctx, fz_output *out)
 		fz_throw(ctx, FZ_ERROR_GENERIC, "Cannot derive input stream from output stream");
 	fz_flush_output(ctx, out);
 	return out->as_stream(ctx, out->state);
+}
+
+void
+fz_truncate_output(fz_context *ctx, fz_output *out)
+{
+	if (out->truncate == NULL)
+		fz_throw(ctx, FZ_ERROR_GENERIC, "Cannot truncate this output stream");
+	fz_flush_output(ctx, out);
+	out->truncate(ctx, out->state);
 }
 
 static void
@@ -371,6 +425,12 @@ fz_write_byte(fz_context *ctx, fz_output *out, unsigned char x)
 	}
 }
 
+void
+fz_write_char(fz_context *ctx, fz_output *out, char x)
+{
+	fz_write_byte(ctx, out, (unsigned char)x);
+}
+
 /*
 	Write data to output.
 
@@ -384,7 +444,7 @@ fz_write_data(fz_context *ctx, fz_output *out, const void *data_, size_t size)
 
 	if (out->bp)
 	{
-		if (size >= out->ep - out->bp) /* too large for buffer */
+		if (size >= (size_t) (out->ep - out->bp)) /* too large for buffer */
 		{
 			if (out->wp > out->bp)
 			{
@@ -436,6 +496,12 @@ fz_write_int32_be(fz_context *ctx, fz_output *out, int x)
 }
 
 void
+fz_write_uint32_be(fz_context *ctx, fz_output *out, unsigned int x)
+{
+	fz_write_int32_be(ctx, out, (unsigned int)x);
+}
+
+void
 fz_write_int32_le(fz_context *ctx, fz_output *out, int x)
 {
 	char data[4];
@@ -446,6 +512,12 @@ fz_write_int32_le(fz_context *ctx, fz_output *out, int x)
 	data[3] = x>>24;
 
 	fz_write_data(ctx, out, data, 4);
+}
+
+void
+fz_write_uint32_le(fz_context *ctx, fz_output *out, unsigned int x)
+{
+	fz_write_int32_le(ctx, out, (int)x);
 }
 
 void
@@ -460,6 +532,12 @@ fz_write_int16_be(fz_context *ctx, fz_output *out, int x)
 }
 
 void
+fz_write_uint16_be(fz_context *ctx, fz_output *out, unsigned int x)
+{
+	fz_write_int16_be(ctx, out, (int)x);
+}
+
+void
 fz_write_int16_le(fz_context *ctx, fz_output *out, int x)
 {
 	char data[2];
@@ -468,6 +546,28 @@ fz_write_int16_le(fz_context *ctx, fz_output *out, int x)
 	data[1] = x>>8;
 
 	fz_write_data(ctx, out, data, 2);
+}
+
+void
+fz_write_uint16_le(fz_context *ctx, fz_output *out, unsigned int x)
+{
+	fz_write_int16_le(ctx, out, (int)x);
+}
+
+void
+fz_write_float_le(fz_context *ctx, fz_output *out, float f)
+{
+	union {float f; int32_t i;} u;
+	u.f = f;
+	fz_write_int32_le(ctx, out, u.i);
+}
+
+void
+fz_write_float_be(fz_context *ctx, fz_output *out, float f)
+{
+	union {float f; int32_t i;} u;
+	u.f = f;
+	fz_write_int32_be(ctx, out, u.i);
 }
 
 /*
@@ -481,10 +581,10 @@ fz_write_rune(fz_context *ctx, fz_output *out, int rune)
 }
 
 void
-fz_write_base64(fz_context *ctx, fz_output *out, const unsigned char *data, int size, int newline)
+fz_write_base64(fz_context *ctx, fz_output *out, const unsigned char *data, size_t size, int newline)
 {
 	static const char set[64] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-	int i;
+	size_t i;
 	for (i = 0; i + 3 <= size; i += 3)
 	{
 		int c = data[i];

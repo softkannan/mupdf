@@ -120,8 +120,8 @@ struct fz_display_list_s
 	fz_storable storable;
 	fz_display_node *list;
 	fz_rect mediabox;
-	int max;
-	int len;
+	size_t max;
+	size_t len;
 };
 
 struct fz_list_device_s
@@ -167,26 +167,26 @@ fz_append_display_node(
 	const fz_matrix *ctm,
 	const fz_stroke_state *stroke,
 	const void *private_data,
-	int private_data_len)
+	size_t private_data_len)
 {
 	fz_display_node node = { 0 };
 	fz_display_node *node_ptr;
 	fz_list_device *writer = (fz_list_device *)dev;
 	fz_display_list *list = writer->list;
-	int size;
-	int rect_off = 0;
-	int path_off = 0;
-	int color_off = 0;
-	int colorspace_off = 0;
-	int alpha_off = 0;
-	int ctm_off = 0;
-	int stroke_off = 0;
+	size_t size;
+	size_t rect_off = 0;
+	size_t path_off = 0;
+	size_t color_off = 0;
+	size_t colorspace_off = 0;
+	size_t alpha_off = 0;
+	size_t ctm_off = 0;
+	size_t stroke_off = 0;
 	int rect_for_updates = 0;
-	int private_off = 0;
+	size_t private_off = 0;
 	fz_path *my_path = NULL;
 	fz_stroke_state *my_stroke = NULL;
 	fz_rect local_rect;
-	int path_size = 0;
+	size_t path_size = 0;
 
 	switch (cmd)
 	{
@@ -453,7 +453,7 @@ fz_append_display_node(
 	}
 	if (path && (writer->path == NULL || path != writer->path))
 	{
-		int max = SIZE_IN_NODES(MAX_NODE_SIZE) - size - SIZE_IN_NODES(private_data_len);
+		size_t max = SIZE_IN_NODES(MAX_NODE_SIZE) - size - SIZE_IN_NODES(private_data_len);
 		path_size = SIZE_IN_NODES(fz_pack_path(ctx, NULL, max, path));
 		node.path = 1;
 		path_off = size;
@@ -462,7 +462,7 @@ fz_append_display_node(
 	}
 	if (private_data != NULL)
 	{
-		int max = SIZE_IN_NODES(MAX_NODE_SIZE) - size;
+		size_t max = SIZE_IN_NODES(MAX_NODE_SIZE) - size;
 		if (SIZE_IN_NODES(private_data_len) > max)
 			fz_throw(ctx, FZ_ERROR_GENERIC, "Private data too large to pack into display list node");
 		private_off = size;
@@ -471,7 +471,7 @@ fz_append_display_node(
 
 	while (list->len + size > list->max)
 	{
-		int newsize = list->max * 2;
+		size_t newsize = list->max * 2;
 		fz_display_node *old = list->list;
 		ptrdiff_t diff;
 		int i, n;
@@ -491,8 +491,11 @@ fz_append_display_node(
 			writer->path = (fz_path *)(((char *)writer->path) + diff);
 	}
 
+	if ((unsigned int)size != size)
+		fz_throw(ctx, FZ_ERROR_GENERIC, "Display list node too large");
+
 	/* Write the node to the list */
-	node.size = size;
+	node.size = (unsigned int)size;
 	node.flags = flags;
 	assert(size < (1<<9));
 	node_ptr = &list->list[list->len];

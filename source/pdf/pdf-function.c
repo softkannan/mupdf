@@ -150,7 +150,7 @@ ps_init_stack(ps_stack *st)
 
 static inline int ps_overflow(ps_stack *st, int n)
 {
-	return n < 0 || st->sp + n >= nelem(st->stack);
+	return n < 0 || st->sp + n >= (int)nelem(st->stack);
 }
 
 static inline int ps_underflow(ps_stack *st, int n)
@@ -359,7 +359,7 @@ ps_run(fz_context *ctx, psobj *code, ps_stack *st, int pc)
 			case PS_OP_BITSHIFT:
 				i2 = ps_pop_int(st);
 				i1 = ps_pop_int(st);
-				if (i2 > 0 && i2 < 8 * sizeof (i2))
+				if (i2 > 0 && i2 < 8 * (int)sizeof (i2))
 					ps_push_int(st, i1 << i2);
 				else if (i2 < 0 && i2 > -8 * (int)sizeof (i2))
 					ps_push_int(st, (int)((unsigned int)i1 >> -i2));
@@ -977,7 +977,7 @@ load_sample_func(fz_context *ctx, pdf_function *func, pdf_obj *dict)
 	if (samplecount > MAX_SAMPLE_FUNCTION_SIZE)
 		fz_throw(ctx, FZ_ERROR_SYNTAX, "sample function too large");
 
-	func->u.sa.samples = fz_malloc_array(ctx, samplecount, float);
+	func->u.sa.samples = Memento_label(fz_malloc_array(ctx, samplecount, float), "function_samples");
 	func->size += samplecount * sizeof(float);
 
 	stream = pdf_open_stream(ctx, dict);
@@ -1179,7 +1179,11 @@ eval_exponential_func(fz_context *ctx, pdf_function *func, float in, float *out)
 
 	/* Default output is zero, which is suitable for violated constraints */
 	if ((func->u.e.n != (int)func->u.e.n && x < 0) || (func->u.e.n < 0 && x == 0))
+	{
+		for (i = 0; i < func->n; i++)
+			out[i] = 0;
 		return;
+	}
 
 	tmp = powf(x, func->u.e.n);
 	for (i = 0; i < func->n; i++)
@@ -1220,9 +1224,9 @@ load_stitching_func(fz_context *ctx, pdf_function *func, pdf_obj *dict)
 			fz_throw(ctx, FZ_ERROR_SYNTAX, "recursive function");
 		k = pdf_array_len(ctx, obj);
 
-		func->u.st.funcs = fz_malloc_array(ctx, k, pdf_function*);
-		func->u.st.bounds = fz_malloc_array(ctx, k - 1, float);
-		func->u.st.encode = fz_malloc_array(ctx, k * 2, float);
+		func->u.st.funcs = Memento_label(fz_malloc_array(ctx, k, pdf_function*), "stitch_fns");
+		func->u.st.bounds = Memento_label(fz_malloc_array(ctx, k - 1, float), "stitch_bounds");
+		func->u.st.encode = Memento_label(fz_malloc_array(ctx, k * 2, float), "stitch_encode");
 		funcs = func->u.st.funcs;
 
 		for (i = 0; i < k; i++)

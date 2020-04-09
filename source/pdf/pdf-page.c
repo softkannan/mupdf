@@ -15,6 +15,11 @@ pdf_count_pages(fz_context *ctx, pdf_document *doc)
 	return pdf_to_int(ctx, pdf_dict_getp(ctx, pdf_trailer(ctx, doc), "Root/Pages/Count"));
 }
 
+int pdf_count_pages_imp(fz_context *ctx, fz_document *doc, int chapter)
+{
+	return pdf_count_pages(ctx, (pdf_document*)doc);
+}
+
 static int
 pdf_load_page_tree_imp(fz_context *ctx, pdf_document *doc, pdf_obj *node, int idx)
 {
@@ -63,7 +68,7 @@ pdf_load_page_tree(fz_context *ctx, pdf_document *doc)
 	if (!doc->rev_page_map)
 	{
 		doc->rev_page_count = pdf_count_pages(ctx, doc);
-		doc->rev_page_map = fz_malloc_array(ctx, doc->rev_page_count, pdf_rev_page_map);
+		doc->rev_page_map = Memento_label(fz_malloc_array(ctx, doc->rev_page_count, pdf_rev_page_map), "pdf_rev_page_map");
 		pdf_load_page_tree_imp(ctx, doc, pdf_dict_getp(ctx, pdf_trailer(ctx, doc), "Root/Pages"), 0);
 		qsort(doc->rev_page_map, doc->rev_page_count, sizeof *doc->rev_page_map, cmp_rev_page_map);
 	}
@@ -1161,6 +1166,11 @@ pdf_load_page(fz_context *ctx, pdf_document *doc, int number)
 	}
 
 	return page;
+}
+
+fz_page *pdf_load_page_imp(fz_context *ctx, fz_document *doc, int chapter, int number)
+{
+	return (fz_page*)pdf_load_page(ctx, (pdf_document*)doc, number);
 }
 
 /*

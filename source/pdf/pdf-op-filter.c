@@ -86,14 +86,14 @@ typedef struct pdf_filter_processor_s
 	pdf_text_object_state tos;
 	int Tm_pending;
 	int BT_pending;
+	int in_BT;
 	float Tm_adjust;
 	void *font_name;
 	tag_record *current_tags;
 	tag_record *pending_tags;
-	pdf_text_filter_fn *text_filter;
-	pdf_after_text_object_fn *after_text;
-	void *opaque;
 	pdf_obj *old_rdb, *new_rdb;
+	pdf_filter_options *filter;
+	fz_matrix transform;
 } pdf_filter_processor;
 
 static void
@@ -116,6 +116,31 @@ copy_resource(fz_context *ctx, pdf_filter_processor *p, pdf_obj *key, const char
 		}
 		pdf_dict_putp(ctx, res, name, obj);
 	}
+}
+
+static void
+add_resource(fz_context *ctx, pdf_filter_processor *p, pdf_obj *key, const char *name, pdf_obj *val)
+{
+	pdf_obj *res = pdf_dict_get(ctx, p->new_rdb, key);
+	if (!res)
+		res = pdf_dict_put_dict(ctx, p->new_rdb, key, 8);
+	pdf_dict_puts(ctx, res, name, val);
+}
+
+static void
+create_resource_name(fz_context *ctx, pdf_filter_processor *p, pdf_obj *key, const char *prefix, char *buf, int len)
+{
+	int i;
+	pdf_obj *res = pdf_dict_get(ctx, p->new_rdb, key);
+	if (!res)
+		res = pdf_dict_put_dict(ctx, p->new_rdb, key, 8);
+	for (i = 1; i < 65536; ++i)
+	{
+		fz_snprintf(buf, len, "%s%d", prefix, i);
+		if (!pdf_dict_gets(ctx, res, buf))
+			return;
+	}
+	fz_throw(ctx, FZ_ERROR_GENERIC, "Cannot create unique resource name");
 }
 
 static void
@@ -228,7 +253,7 @@ static void filter_flush(fz_context *ctx, pdf_filter_processor *p, int flush)
 					gstate->pending.ctm.e,
 					gstate->pending.ctm.f);
 
-			gstate->sent.ctm = fz_concat(current, gstate->pending.ctm);
+			gstate->sent.ctm = fz_concat(gstate->pending.ctm, current);
 			gstate->pending.ctm.a = 1;
 			gstate->pending.ctm.b = 0;
 			gstate->pending.ctm.c = 0;
@@ -424,6 +449,7 @@ done_SC:
 			if (p->chain->op_BT)
 				p->chain->op_BT(ctx, p->chain);
 			p->BT_pending = 0;
+			p->in_BT = 1;
 		}
 		if (gstate->pending.text.char_space != gstate->sent.text.char_space)
 		{
@@ -501,10 +527,13 @@ filter_show_char(fz_context *ctx, pdf_filter_processor *p, int cid, int *unicode
 	}
 	*unicode = ucsbuf[0];
 
-	if (p->text_filter)
+	if (p->filter->text_filter)
 	{
-		fz_matrix ctm = fz_concat(gstate->sent.ctm, gstate->pending.ctm);
+		fz_matrix ctm;
 		fz_rect bbox;
+
+		ctm = fz_concat(gstate->pending.ctm, gstate->sent.ctm);
+		ctm = fz_concat(ctm, p->transform);
 
 		if (fontdesc->wmode == 0)
 		{
@@ -522,7 +551,7 @@ filter_show_char(fz_context *ctx, pdf_filter_processor *p, int cid, int *unicode
 			bbox.y1 = fz_advance_glyph(ctx, fontdesc->font, p->tos.gid, 1);
 		}
 
-		remove = p->text_filter(ctx, p->opaque, ucsbuf, ucslen, trm, ctm, bbox);
+		remove = p->filter->text_filter(ctx, p->filter->opaque, ucsbuf, ucslen, trm, ctm, bbox);
 	}
 
 	pdf_tos_move_after_char(ctx, &p->tos);
@@ -675,7 +704,7 @@ update_mcid(fz_context *ctx, pdf_filter_processor *p)
  * we hit the end).
  */
 static void
-filter_string_to_segment(fz_context *ctx, pdf_filter_processor *p, unsigned char *buf, int len, int *pos, int *inc, int *removed_space)
+filter_string_to_segment(fz_context *ctx, pdf_filter_processor *p, unsigned char *buf, size_t len, size_t *pos, int *inc, int *removed_space)
 {
 	filter_gstate *gstate = p->gstate;
 	pdf_font_desc *fontdesc = gstate->pending.text.font;
@@ -766,11 +795,12 @@ push_adjustment_to_array(fz_context *ctx, pdf_filter_processor *p, pdf_obj *arr)
 }
 
 static void
-filter_show_string(fz_context *ctx, pdf_filter_processor *p, unsigned char *buf, int len)
+filter_show_string(fz_context *ctx, pdf_filter_processor *p, unsigned char *buf, size_t len)
 {
 	filter_gstate *gstate = p->gstate;
 	pdf_font_desc *fontdesc = gstate->pending.text.font;
-	int i, inc, removed_space;
+	int inc, removed_space;
+	size_t i;
 
 	if (!fontdesc)
 		return;
@@ -778,7 +808,7 @@ filter_show_string(fz_context *ctx, pdf_filter_processor *p, unsigned char *buf,
 	i = 0;
 	while (i < len)
 	{
-		int start = i;
+		size_t start = i;
 		filter_string_to_segment(ctx, p, buf, len, &i, &inc, &removed_space);
 		if (start != i)
 		{
@@ -830,13 +860,13 @@ filter_show_text(fz_context *ctx, pdf_filter_processor *p, pdf_obj *text)
 			if (pdf_is_string(ctx, item))
 			{
 				unsigned char *buf = (unsigned char *)pdf_to_str_buf(ctx, item);
-				int len = pdf_to_str_len(ctx, item);
-				int j = 0;
+				size_t len = pdf_to_str_len(ctx, item);
+				size_t j = 0;
 				int removed_space;
 				while (j < len)
 				{
 					int inc;
-					int start = j;
+					size_t start = j;
 					filter_string_to_segment(ctx, p, buf, len, &j, &inc, &removed_space);
 					if (start != j)
 					{
@@ -1038,6 +1068,14 @@ static void
 pdf_filter_Q(fz_context *ctx, pdf_processor *proc)
 {
 	pdf_filter_processor *p = (pdf_filter_processor*)proc;
+	filter_flush(ctx, p, FLUSH_TEXT);
+	if (p->in_BT)
+	{
+		if (p->chain->op_ET)
+			p->chain->op_ET(ctx, p->chain);
+		p->in_BT = 0;
+		p->BT_pending = 1;
+	}
 	filter_pop(ctx, p);
 }
 
@@ -1261,14 +1299,17 @@ pdf_filter_ET(fz_context *ctx, pdf_processor *proc)
 		filter_flush(ctx, p, 0);
 		if (p->chain->op_ET)
 			p->chain->op_ET(ctx, p->chain);
+		p->in_BT = 0;
 	}
 	p->BT_pending = 0;
-	if (p->after_text)
+	if (p->filter->after_text_object)
 	{
-		fz_matrix ctm = fz_concat(p->gstate->sent.ctm, p->gstate->pending.ctm);
+		fz_matrix ctm;
+		ctm = fz_concat(p->gstate->pending.ctm, p->gstate->sent.ctm);
+		ctm = fz_concat(ctm, p->transform);
 		if (p->chain->op_q)
 			p->chain->op_q(ctx, p->chain);
-		p->after_text(ctx, p->opaque, p->doc, p->chain, ctm);
+		p->filter->after_text_object(ctx, p->filter->opaque, p->doc, p->chain, ctm);
 		if (p->chain->op_Q)
 			p->chain->op_Q(ctx, p->chain);
 	}
@@ -1374,6 +1415,7 @@ static void
 pdf_filter_Tstar(fz_context *ctx, pdf_processor *proc)
 {
 	pdf_filter_processor *p = (pdf_filter_processor*)proc;
+	p->Tm_adjust = 0;
 	pdf_tos_newline(&p->tos, p->gstate->pending.text.leading);
 	/* If Tm_pending, then just adjusting the matrix (as
 	 * pdf_tos_newline has done) is enough. Otherwise we
@@ -1392,14 +1434,14 @@ pdf_filter_TJ(fz_context *ctx, pdf_processor *proc, pdf_obj *array)
 }
 
 static void
-pdf_filter_Tj(fz_context *ctx, pdf_processor *proc, char *str, int len)
+pdf_filter_Tj(fz_context *ctx, pdf_processor *proc, char *str, size_t len)
 {
 	pdf_filter_processor *p = (pdf_filter_processor*)proc;
 	filter_show_string(ctx, p, (unsigned char *)str, len);
 }
 
 static void
-pdf_filter_squote(fz_context *ctx, pdf_processor *proc, char *str, int len)
+pdf_filter_squote(fz_context *ctx, pdf_processor *proc, char *str, size_t len)
 {
 	/* Note, we convert all T' operators to (maybe) a T* and a Tj */
 	pdf_filter_processor *p = (pdf_filter_processor*)proc;
@@ -1413,7 +1455,7 @@ pdf_filter_squote(fz_context *ctx, pdf_processor *proc, char *str, int len)
 }
 
 static void
-pdf_filter_dquote(fz_context *ctx, pdf_processor *proc, float aw, float ac, char *str, int len)
+pdf_filter_dquote(fz_context *ctx, pdf_processor *proc, float aw, float ac, char *str, size_t len)
 {
 	/* Note, we convert all T" operators to (maybe) a T*,
 	 * (maybe) Tc, (maybe) Tw and a Tj. */
@@ -1604,12 +1646,31 @@ pdf_filter_k(fz_context *ctx, pdf_processor *proc, float c, float m, float y, fl
 /* shadings, images, xobjects */
 
 static void
-pdf_filter_BI(fz_context *ctx, pdf_processor *proc, fz_image *img, const char *colorspace)
+pdf_filter_BI(fz_context *ctx, pdf_processor *proc, fz_image *image, const char *colorspace)
 {
 	pdf_filter_processor *p = (pdf_filter_processor*)proc;
 	filter_flush(ctx, p, FLUSH_ALL);
 	if (p->chain->op_BI)
-		p->chain->op_BI(ctx, p->chain, img, colorspace);
+	{
+		if (p->filter->image_filter)
+		{
+			fz_matrix ctm = fz_concat(p->gstate->sent.ctm, p->transform);
+			image = p->filter->image_filter(ctx, p->filter->opaque, ctm, "<inline>", image);
+			if (image)
+			{
+				fz_try(ctx)
+					p->chain->op_BI(ctx, p->chain, image, colorspace);
+				fz_always(ctx)
+					fz_drop_image(ctx, image);
+				fz_catch(ctx)
+					fz_rethrow(ctx);
+			}
+		}
+		else
+		{
+			p->chain->op_BI(ctx, p->chain, image, colorspace);
+		}
+	}
 }
 
 static void
@@ -1626,20 +1687,92 @@ static void
 pdf_filter_Do_image(fz_context *ctx, pdf_processor *proc, const char *name, fz_image *image)
 {
 	pdf_filter_processor *p = (pdf_filter_processor*)proc;
+	fz_image *new_image;
 	filter_flush(ctx, p, FLUSH_ALL);
 	if (p->chain->op_Do_image)
-		p->chain->op_Do_image(ctx, p->chain, name, image);
-	copy_resource(ctx, p, PDF_NAME(XObject), name);
+	{
+		if (p->filter->image_filter)
+		{
+			fz_matrix ctm = fz_concat(p->gstate->sent.ctm, p->transform);
+			new_image = p->filter->image_filter(ctx, p->filter->opaque, ctm, name, image);
+		}
+		else
+		{
+			new_image = image;
+		}
+
+		if (new_image == image)
+		{
+			if (p->filter->instance_forms)
+			{
+				/* Make up a unique name when instancing forms so we don't accidentally clash. */
+				char buf[40];
+				pdf_obj *obj = pdf_dict_gets(ctx, pdf_dict_get(ctx, p->old_rdb, PDF_NAME(XObject)), name);
+				create_resource_name(ctx, p, PDF_NAME(XObject), "Im", buf, sizeof buf);
+				add_resource(ctx, p, PDF_NAME(XObject), buf, obj);
+				p->chain->op_Do_image(ctx, p->chain, buf, image);
+			}
+			else
+			{
+				copy_resource(ctx, p, PDF_NAME(XObject), name);
+				p->chain->op_Do_image(ctx, p->chain, name, image);
+			}
+		}
+		else if (new_image != NULL)
+		{
+			pdf_obj *obj = NULL;
+			fz_var(obj);
+			fz_try(ctx)
+			{
+				char buf[40];
+				create_resource_name(ctx, p, PDF_NAME(XObject), "Im", buf, sizeof buf);
+				obj = pdf_add_image(ctx, p->doc, new_image);
+				add_resource(ctx, p, PDF_NAME(XObject), buf, obj);
+				p->chain->op_Do_image(ctx, p->chain, buf, new_image);
+			}
+			fz_always(ctx)
+			{
+				pdf_drop_obj(ctx, obj);
+				fz_drop_image(ctx, new_image);
+			}
+			fz_catch(ctx)
+				fz_rethrow(ctx);
+		}
+	}
 }
 
 static void
 pdf_filter_Do_form(fz_context *ctx, pdf_processor *proc, const char *name, pdf_obj *xobj, pdf_obj *page_resources)
 {
 	pdf_filter_processor *p = (pdf_filter_processor*)proc;
+	fz_matrix transform;
 	filter_flush(ctx, p, FLUSH_ALL);
-	if (p->chain->op_Do_form)
-		p->chain->op_Do_form(ctx, p->chain, name, xobj, page_resources);
-	copy_resource(ctx, p, PDF_NAME(XObject), name);
+
+	if (p->filter->instance_forms)
+	{
+		/* Copy an instance of the form with a new unique name. */
+		pdf_obj *new_xobj;
+		char buf[40];
+		create_resource_name(ctx, p, PDF_NAME(XObject), "Fm", buf, sizeof buf);
+		transform = fz_concat(p->gstate->sent.ctm, p->transform);
+		new_xobj = pdf_filter_xobject_instance(ctx, xobj, page_resources, transform, p->filter);
+		fz_try(ctx)
+		{
+			add_resource(ctx, p, PDF_NAME(XObject), buf, new_xobj);
+			if (p->chain->op_Do_form)
+				p->chain->op_Do_form(ctx, p->chain, buf, new_xobj, page_resources);
+		}
+		fz_always(ctx)
+			pdf_drop_obj(ctx, new_xobj);
+		fz_catch(ctx)
+			fz_rethrow(ctx);
+	}
+	else
+	{
+		copy_resource(ctx, p, PDF_NAME(XObject), name);
+		if (p->chain->op_Do_form)
+			p->chain->op_Do_form(ctx, p->chain, name, xobj, page_resources);
+	}
 }
 
 /* marked content */
@@ -1755,9 +1888,10 @@ pdf_filter_EMC(fz_context *ctx, pdf_processor *proc)
 	 * pop one of the current ones, and pass the EMC on. */
 	if (p->pending_tags != NULL)
 		pop_tag(ctx, p, &p->pending_tags);
-	else
+	else if (p->current_tags)
 	{
 		update_mcid(ctx, p);
+		copy_resource(ctx, p, PDF_NAME(Properties), pdf_to_name(ctx, p->current_tags->raw));
 		pop_tag(ctx, p, &p->current_tags);
 		if (p->chain->op_EMC)
 			p->chain->op_EMC(ctx, p->chain);
@@ -1786,6 +1920,15 @@ pdf_filter_EX(fz_context *ctx, pdf_processor *proc)
 
 static void
 pdf_filter_END(fz_context *ctx, pdf_processor *proc)
+{
+	pdf_filter_processor *p = (pdf_filter_processor*)proc;
+	filter_flush(ctx, p, FLUSH_TEXT);
+	if (p->chain->op_END)
+		p->chain->op_END(ctx, p->chain);
+}
+
+static void
+pdf_close_filter_processor(fz_context *ctx, pdf_processor *proc)
 {
 	pdf_filter_processor *p = (pdf_filter_processor*)proc;
 	while (!filter_pop(ctx, p))
@@ -1850,36 +1993,22 @@ pdf_drop_filter_processor(fz_context *ctx, pdf_processor *proc)
 	the new one as they are used. At the end therefore, this
 	contains exactly those resource objects actually required.
 
+	The filter options struct allows you to filter objects using callbacks.
 */
 pdf_processor *
-pdf_new_filter_processor(fz_context *ctx, pdf_document *doc, pdf_processor *chain, pdf_obj *old_rdb, pdf_obj *new_rdb)
-{
-	return pdf_new_filter_processor_with_text_filter(ctx, doc, -1, chain, old_rdb, new_rdb, NULL, NULL, NULL);
-}
-
-/*
-	Create a filter
-	processor with a filter function for text. This filters the
-	PDF operators it is fed, and passes them down (with some
-	changes) to the child filter.
-
-	See pdf_new_filter_processor for documentation.
-
-	text_filter: A function called to assess whether a given
-	character should be removed or not.
-
-	after_text_object: A function to be called after each text object.
-	This allows the caller to insert some extra content if
-	required.
-
-	text_filter_opaque: Opaque value to be passed to the
-	text_filter function.
-*/
-pdf_processor *
-pdf_new_filter_processor_with_text_filter(fz_context *ctx, pdf_document *doc, int structparents, pdf_processor *chain, pdf_obj *old_rdb, pdf_obj *new_rdb, pdf_text_filter_fn *text_filter, pdf_after_text_object_fn *after, void *text_filter_opaque)
+pdf_new_filter_processor(
+	fz_context *ctx,
+	pdf_document *doc,
+	pdf_processor *chain,
+	pdf_obj *old_rdb,
+	pdf_obj *new_rdb,
+	int structparents,
+	fz_matrix transform,
+	pdf_filter_options *filter)
 {
 	pdf_filter_processor *proc = pdf_new_processor(ctx, sizeof *proc);
 	{
+		proc->super.close_processor = pdf_close_filter_processor;
 		proc->super.drop_processor = pdf_drop_filter_processor;
 
 		/* general graphics state */
@@ -2008,35 +2137,18 @@ pdf_new_filter_processor_with_text_filter(fz_context *ctx, pdf_document *doc, in
 	proc->chain = chain;
 	proc->old_rdb = old_rdb;
 	proc->new_rdb = new_rdb;
-
-	proc->text_filter = text_filter;
-	proc->after_text = after;
-	proc->opaque = text_filter_opaque;
+	proc->filter = filter;
+	proc->transform = transform;
 
 	fz_try(ctx)
 	{
 		proc->gstate = fz_malloc_struct(ctx, filter_gstate);
 		proc->gstate->pending.ctm = fz_identity;
 		proc->gstate->sent.ctm = fz_identity;
-
-		proc->gstate->pending.stroke = proc->gstate->pending.stroke; /* ? */
-		proc->gstate->sent.stroke = proc->gstate->pending.stroke;
-		proc->gstate->pending.text.char_space = 0;
-		proc->gstate->pending.text.word_space = 0;
 		proc->gstate->pending.text.scale = 1;
-		proc->gstate->pending.text.leading = 0;
-		proc->gstate->pending.text.font = NULL;
 		proc->gstate->pending.text.size = -1;
-		proc->gstate->pending.text.render = 0;
-		proc->gstate->pending.text.rise = 0;
-		proc->gstate->sent.text.char_space = 0;
-		proc->gstate->sent.text.word_space = 0;
 		proc->gstate->sent.text.scale = 1;
-		proc->gstate->sent.text.leading = 0;
-		proc->gstate->sent.text.font = NULL;
 		proc->gstate->sent.text.size = -1;
-		proc->gstate->sent.text.render = 0;
-		proc->gstate->sent.text.rise = 0;
 	}
 	fz_catch(ctx)
 	{
